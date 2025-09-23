@@ -16,6 +16,7 @@ import (
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/repo"
 	"github.com/bluesky-social/indigo/util"
+
 	//sqlbs "github.com/ipfs/go-bs-sqlite3"
 	"github.com/ipfs/go-cid"
 	flatfs "github.com/ipfs/go-ds-flatfs"
@@ -521,7 +522,7 @@ func TestDuplicateBlockAcrossShards(ot *testing.T) {
 
 			var cids []cid.Cid
 			var revs []string
-			for _, ds := range []*DeltaSession{ds1, ds2, ds3} {
+			for _, ds := range []BlockStorage{ds1, ds2, ds3} {
 				ncid, rev, err := setupRepo(ctx, ds, true)
 				if err != nil {
 					t.Fatal(err)

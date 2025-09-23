@@ -52,12 +52,26 @@ type CarStore interface {
 
 	GetUserRepoHead(ctx context.Context, user models.Uid) (cid.Cid, error)
 	GetUserRepoRev(ctx context.Context, user models.Uid) (string, error)
-	ImportSlice(ctx context.Context, uid models.Uid, since *string, carslice []byte) (cid.Cid, *DeltaSession, error)
-	NewDeltaSession(ctx context.Context, user models.Uid, since *string) (*DeltaSession, error)
-	ReadOnlySession(user models.Uid) (*DeltaSession, error)
+	ImportSlice(ctx context.Context, uid models.Uid, since *string, carslice []byte) (cid.Cid, BlockStorage, error)
+	NewDeltaSession(ctx context.Context, user models.Uid, since *string) (BlockStorage, error)
+	ReadOnlySession(user models.Uid) (BlockStorage, error)
 	ReadUserCar(ctx context.Context, user models.Uid, sinceRev string, incremental bool, w io.Writer) error
 	Stat(ctx context.Context, usr models.Uid) ([]UserStat, error)
 	WipeUserData(ctx context.Context, user models.Uid) error
+}
+
+type BlockStorage interface {
+	BaseCid() cid.Cid
+	Put(ctx context.Context, b blockformat.Block) error
+	PutMany(ctx context.Context, bs []blockformat.Block) error
+	AllKeysChan(ctx context.Context) (<-chan cid.Cid, error)
+	DeleteBlock(ctx context.Context, c cid.Cid) error
+	Get(ctx context.Context, c cid.Cid) (blockformat.Block, error)
+	Has(ctx context.Context, c cid.Cid) (bool, error)
+	HashOnRead(hor bool)
+	GetSize(ctx context.Context, c cid.Cid) (int, error)
+	CloseWithRoot(ctx context.Context, root cid.Cid, rev string) ([]byte, error)
+	CalcDiff(ctx context.Context, skipcids map[cid.Cid]bool) error
 }
 
 type FileCarStore struct {
@@ -318,7 +332,7 @@ func (cs *FileCarStore) getLastShard(ctx context.Context, user models.Uid) (*Car
 
 var ErrRepoBaseMismatch = fmt.Errorf("attempted a delta session on top of the wrong previous head")
 
-func (cs *FileCarStore) NewDeltaSession(ctx context.Context, user models.Uid, since *string) (*DeltaSession, error) {
+func (cs *FileCarStore) NewDeltaSession(ctx context.Context, user models.Uid, since *string) (BlockStorage, error) {
 	ctx, span := otel.Tracer("carstore").Start(ctx, "NewSession")
 	defer span.End()
 
@@ -349,7 +363,7 @@ func (cs *FileCarStore) NewDeltaSession(ctx context.Context, user models.Uid, si
 	}, nil
 }
 
-func (cs *FileCarStore) ReadOnlySession(user models.Uid) (*DeltaSession, error) {
+func (cs *FileCarStore) ReadOnlySession(user models.Uid) (BlockStorage, error) {
 	return &DeltaSession{
 		base: &userView{
 			user:     user,
@@ -768,7 +782,7 @@ func BlockDiff(ctx context.Context, bs blockstore.Blockstore, oldroot cid.Cid, n
 	return dropset, nil
 }
 
-func (cs *FileCarStore) ImportSlice(ctx context.Context, uid models.Uid, since *string, carslice []byte) (cid.Cid, *DeltaSession, error) {
+func (cs *FileCarStore) ImportSlice(ctx context.Context, uid models.Uid, since *string, carslice []byte) (cid.Cid, BlockStorage, error) {
 	ctx, span := otel.Tracer("carstore").Start(ctx, "ImportSlice")
 	defer span.End()
 
